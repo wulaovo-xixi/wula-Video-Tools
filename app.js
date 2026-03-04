@@ -44,6 +44,10 @@ function App() {
 
   const [pageLinkInput, setPageLinkInput] = useState("");
   const [linkImport, setLinkImport] = useState(null);
+  const [parsingLink, setParsingLink] = useState(false);
+  const [previewLoaded, setPreviewLoaded] = useState(false);
+  const [downloading, setDownloading] = useState(false);
+  const [downloadProgress, setDownloadProgress] = useState(null);
 
   const [analyzing, setAnalyzing] = useState(false);
   const [analysisError, setAnalysisError] = useState("");
@@ -501,10 +505,46 @@ function App() {
               />
               <button
                 type="button"
-                onClick={() => {
-                  const parsed = parseVideoPageLink(pageLinkInput);
-                  if (parsed) setLinkImport(parsed);
-                  else setAnalysisError("无法识别该链接，请粘贴完整的视频页面地址。");
+                disabled={parsingLink}
+                onClick={async () => {
+                  const raw = pageLinkInput.trim();
+                  if (!raw) {
+                    setAnalysisError("请先粘贴视频链接");
+                    return;
+                  }
+                  const parsed = parseVideoPageLink(raw);
+                  if (!parsed) {
+                    setAnalysisError("无法识别该链接，请粘贴完整的视频页面地址。");
+                    return;
+                  }
+                  setParsingLink(true);
+                  setAnalysisError("");
+                  setLinkImport(null);
+                  setPreviewLoaded(false);
+                  try {
+                    const base = typeof window !== "undefined" && window.location ? (window.location.origin || "") : "";
+                    const res = await fetch((base + "/api/get-video-info").replace("//api", "/api"), {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ url: raw }),
+                    });
+                    const data = await res.json().catch(() => ({}));
+                    if (res.status === 501 || !res.ok) {
+                      setLinkImport({ ...parsed, apiUnavailable: true, hint: data.error || "当前环境暂不支持从链接解析" });
+                      return;
+                    }
+                    setLinkImport({
+                      ...parsed,
+                      title: data.title,
+                      directUrl: data.directUrl,
+                      filesize: data.filesize,
+                      safeFilename: data.safeFilename,
+                    });
+                  } catch (e) {
+                    setLinkImport({ ...parsed, apiUnavailable: true, hint: e.message || "网络请求失败" });
+                  } finally {
+                    setParsingLink(false);
+                  }
                 }}
                 style={{
                   padding: "10px 18px",
@@ -518,9 +558,17 @@ function App() {
                   cursor: "pointer",
                 }}
               >
-                解析并导入
+                {parsingLink ? "解析中…" : "解析并导入"}
               </button>
             </div>
+            {parsingLink && (
+              <div style={{ marginTop: 10 }}>
+                <div style={{ fontSize: 11, color: "rgba(186,194,226,0.9)", marginBottom: 4 }}>解析进度</div>
+                <div style={{ height: 6, borderRadius: 999, background: "rgba(255,255,255,0.08)", overflow: "hidden" }}>
+                  <div style={{ height: "100%", width: "40%", background: "linear-gradient(90deg, #5B7FFF, #7F2EFF)", borderRadius: 999, animation: "cutlens-progress 1.2s ease-in-out infinite" }} />
+                </div>
+              </div>
+            )}
             <p
               style={{
                 fontSize: 11,
@@ -540,17 +588,25 @@ function App() {
                   border: "1px solid rgba(255,255,255,0.06)",
                 }}
               >
-                <div
-                  style={{
-                    fontSize: 12,
-                    color: "rgba(200,208,245,0.98)",
-                    marginBottom: 8,
-                  }}
-                >
-                  已识别为「{linkImport.name}」链接
+                <div style={{ fontSize: 12, color: "rgba(200,208,245,0.98)", marginBottom: 8 }}>
+                  已识别为「{linkImport.name}」链接{linkImport.title ? ` · ${linkImport.title}` : ""}
                 </div>
                 {linkImport.embedUrl ? (
                   <>
+                    <div style={{ marginBottom: 8 }}>
+                      <div style={{ fontSize: 11, color: "rgba(186,194,226,0.9)", marginBottom: 4 }}>预览进度</div>
+                      <div style={{ height: 6, borderRadius: 999, background: "rgba(255,255,255,0.08)", overflow: "hidden" }}>
+                        <div
+                          style={{
+                            height: "100%",
+                            width: previewLoaded ? "100%" : "30%",
+                            background: "linear-gradient(90deg, #FF8A3C, #FF4D1C)",
+                            borderRadius: 999,
+                            transition: "width 0.3s ease",
+                          }}
+                        />
+                      </div>
+                    </div>
                     <div
                       style={{
                         position: "relative",
@@ -565,6 +621,7 @@ function App() {
                       <iframe
                         src={linkImport.embedUrl}
                         title="视频预览"
+                        onLoad={() => setPreviewLoaded(true)}
                         style={{
                           position: "absolute",
                           top: 0,
@@ -576,15 +633,88 @@ function App() {
                         allowFullScreen
                       />
                     </div>
-                    <p
-                      style={{
-                        fontSize: 11,
-                        color: "rgba(152,160,199,0.9)",
-                        marginTop: 8,
-                      }}
-                    >
-                      可在上方预览。要进行剪辑节奏分析，请下载该视频后使用下方「选择示例视频」上传，或直接选择本地文件。
-                    </p>
+                    <div style={{ marginTop: 10, display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
+                      {linkImport.apiUnavailable ? (
+                        <p style={{ fontSize: 11, color: "rgba(175,182,215,0.95)" }}>
+                          {linkImport.hint}。请下载该视频后使用下方「选择示例视频」上传，或直接选择本地文件。
+                        </p>
+                      ) : linkImport.directUrl ? (
+                        <>
+                          <button
+                            type="button"
+                            disabled={downloading}
+                            onClick={async () => {
+                              const pageUrl = linkImport.pageUrl;
+                              if (!pageUrl) return;
+                              setDownloading(true);
+                              setDownloadProgress(0);
+                              setAnalysisError("");
+                              const base = typeof window !== "undefined" && window.location ? window.location.origin : "";
+                              try {
+                                const res = await fetch((base + "/api/download-video?url=" + encodeURIComponent(pageUrl)).replace("//api", "/api"));
+                                if (!res.ok) {
+                                  const err = await res.json().catch(() => ({}));
+                                  setAnalysisError(err.error || "下载失败，请尝试在新标签页打开链接保存");
+                                  if (linkImport.directUrl) window.open(linkImport.directUrl, "_blank");
+                                  return;
+                                }
+                                const total = res.headers.get("Content-Length");
+                                const reader = res.body.getReader();
+                                const chunks = [];
+                                let received = 0;
+                                while (true) {
+                                  const { done, value } = await reader.read();
+                                  if (done) break;
+                                  chunks.push(value);
+                                  received += value.length;
+                                  if (total) setDownloadProgress(Math.min(99, Math.round((received / Number(total)) * 100)));
+                                }
+                                setDownloadProgress(100);
+                                const blob = new Blob(chunks, { type: "video/mp4" });
+                                const a = document.createElement("a");
+                                a.href = URL.createObjectURL(blob);
+                                a.download = linkImport.safeFilename || "video.mp4";
+                                a.click();
+                                URL.revokeObjectURL(a.href);
+                              } catch (e) {
+                                setAnalysisError(e.message || "下载失败");
+                                if (linkImport.directUrl) window.open(linkImport.directUrl, "_blank");
+                              } finally {
+                                setDownloading(false);
+                                setDownloadProgress(null);
+                              }
+                            }}
+                            style={{
+                              padding: "8px 14px",
+                              borderRadius: 999,
+                              border: "none",
+                              background: "linear-gradient(135deg, #4CE3A0, #26C6DA)",
+                              color: "#05070C",
+                              fontSize: 12,
+                              fontWeight: 600,
+                              cursor: downloading ? "default" : "pointer",
+                            }}
+                          >
+                            {downloading ? "下载中…" : "下载视频"}
+                          </button>
+                          {downloading && downloadProgress != null && (
+                            <div style={{ flex: "1 1 120px", minWidth: 0 }}>
+                              <div style={{ fontSize: 11, color: "rgba(186,194,226,0.9)", marginBottom: 2 }}>下载进度</div>
+                              <div style={{ height: 6, borderRadius: 999, background: "rgba(255,255,255,0.08)", overflow: "hidden" }}>
+                                <div style={{ height: "100%", width: downloadProgress + "%", background: "linear-gradient(90deg, #4CE3A0, #26C6DA)", borderRadius: 999, transition: "width 0.2s ease" }} />
+                              </div>
+                            </div>
+                          )}
+                          <span style={{ fontSize: 11, color: "rgba(152,160,199,0.9)" }}>
+                            或 <a href={linkImport.directUrl} target="_blank" rel="noopener noreferrer" style={{ color: "#7F2EFF" }}>在新标签页打开直链</a> 保存
+                          </span>
+                        </>
+                      ) : (
+                        <p style={{ fontSize: 11, color: "rgba(152,160,199,0.9)" }}>
+                          要进行剪辑节奏分析，请下载该视频后使用下方「选择示例视频」上传，或直接选择本地文件。
+                        </p>
+                      )}
+                    </div>
                   </>
                 ) : linkImport.needRedirect ? (
                   <p style={{ fontSize: 11, color: "rgba(175,182,215,0.95)" }}>
@@ -678,7 +808,14 @@ function App() {
               )}
             </button>
           </div>
-
+          {analyzing && (
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ fontSize: 11, color: "rgba(186,194,226,0.9)", marginBottom: 4 }}>分析进度</div>
+              <div style={{ height: 6, borderRadius: 999, background: "rgba(255,255,255,0.08)", overflow: "hidden" }}>
+                <div style={{ height: "100%", width: "45%", background: "linear-gradient(90deg, #FF8A3C, #FF4D1C)", borderRadius: 999, animation: "cutlens-progress 1.2s ease-in-out infinite" }} />
+              </div>
+            </div>
+          )}
           {sourceFile && (
             <div
               style={{
@@ -1426,6 +1563,10 @@ function App() {
         @keyframes cutlens-spin {
           0% { transform: rotate(0deg); }
           100% { transform: rotate(360deg); }
+        }
+        @keyframes cutlens-progress {
+          0%, 100% { transform: translateX(-60%); }
+          50% { transform: translateX(120%); }
         }
         @media (max-width: 960px) {
           body {
