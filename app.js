@@ -91,6 +91,23 @@ function App() {
     setApplyResult(null);
   };
 
+  const clearSource = () => {
+    if (sourceUrl) URL.revokeObjectURL(sourceUrl);
+    setSourceFile(null);
+    setSourceUrl(null);
+    setAnalysisResult(null);
+    setTemplatePlan(null);
+    setApplyResult(null);
+    setAnalysisError("");
+  };
+
+  const clearTarget = () => {
+    if (targetUrl) URL.revokeObjectURL(targetUrl);
+    setTargetFile(null);
+    setTargetUrl(null);
+    setApplyResult(null);
+  };
+
   async function analyzeVideoEditing(file) {
     return new Promise((resolve, reject) => {
       const video = document.createElement("video");
@@ -729,6 +746,14 @@ function App() {
             )}
           </div>
 
+          <div style={{ marginBottom: 12, marginTop: 8 }}>
+            <div style={{ fontSize: 12, color: "rgba(186,194,226,0.95)", marginBottom: 6, fontWeight: 600 }}>
+              手动上传视频分析
+            </div>
+            <p style={{ fontSize: 11, color: "rgba(152,160,199,0.85)", marginBottom: 10 }}>
+              选择本地视频文件，即可解析剪辑节奏并生成模板，无需粘贴链接。
+            </p>
+          </div>
           <div
             style={{
               display: "flex",
@@ -886,22 +911,42 @@ function App() {
                   </span>
                 </div>
               </div>
-              {sourceUrl && (
-                <video
-                  src={sourceUrl}
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                {sourceUrl && (
+                  <video
+                    src={sourceUrl}
+                    style={{
+                      width: 120,
+                      height: 70,
+                      borderRadius: 10,
+                      objectFit: "cover",
+                      border: "1px solid rgba(255,255,255,0.12)",
+                      backgroundColor: "#050509",
+                    }}
+                    muted
+                    loop
+                    autoPlay
+                  />
+                )}
+                <button
+                  type="button"
+                  onClick={clearSource}
+                  title="清除并重新选择"
                   style={{
-                    width: 120,
-                    height: 70,
-                    borderRadius: 10,
-                    objectFit: "cover",
-                    border: "1px solid rgba(255,255,255,0.12)",
-                    backgroundColor: "#050509",
+                    padding: "6px 10px",
+                    borderRadius: 8,
+                    border: "1px solid rgba(255,255,255,0.2)",
+                    background: "rgba(255,80,80,0.2)",
+                    color: "rgba(255,180,180,0.98)",
+                    fontSize: 11,
+                    fontWeight: 500,
+                    cursor: "pointer",
+                    whiteSpace: "nowrap",
                   }}
-                  muted
-                  loop
-                  autoPlay
-                />
-              )}
+                >
+                  清除
+                </button>
+              </div>
             </div>
           )}
 
@@ -1430,11 +1475,34 @@ function App() {
             {targetFile && (
               <div
                 style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: 8,
                   fontSize: 11,
                   color: "rgba(163,170,205,0.94)",
                 }}
               >
-                已选择：{targetFile.name}
+                <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  已选择：{targetFile.name}
+                </span>
+                <button
+                  type="button"
+                  onClick={clearTarget}
+                  title="清除选择，重新选择目标视频"
+                  style={{
+                    flexShrink: 0,
+                    padding: "4px 8px",
+                    borderRadius: 6,
+                    border: "1px solid rgba(255,255,255,0.2)",
+                    background: "rgba(255,80,80,0.2)",
+                    color: "rgba(255,180,180,0.98)",
+                    fontSize: 11,
+                    cursor: "pointer",
+                  }}
+                >
+                  清除选择
+                </button>
               </div>
             )}
             <div
