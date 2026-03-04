@@ -1,10 +1,49 @@
 const { useState, useEffect } = React;
 
+// 从网页链接解析平台与嵌入地址（B站可嵌入，其他仅识别）
+function parseVideoPageLink(url) {
+  const raw = (url || "").trim();
+  if (!raw) return null;
+  try {
+    const u = new URL(raw);
+    const host = u.hostname.replace(/^www\./, "");
+    // B站: bilibili.com/video/BVxxx 或 b23.tv
+    if (host.includes("bilibili.com")) {
+      const m = raw.match(/\/(BV[\w]{10})/i) || raw.match(/bvid=([\w]{12})/i);
+      const bvid = m ? (m[1].toUpperCase().startsWith("BV") ? m[1].toUpperCase().slice(0, 12) : "BV" + m[1]) : null;
+      if (bvid) {
+        return { platform: "bilibili", name: "哔哩哔哩", embedUrl: "https://player.bilibili.com/player.html?bvid=" + bvid + "&high_quality=1", pageUrl: raw };
+      }
+    }
+    if (host === "b23.tv" || host.endsWith(".b23.tv")) {
+      return { platform: "bilibili", name: "哔哩哔哩", embedUrl: null, pageUrl: raw, needRedirect: true };
+    }
+    // 抖音
+    if (host.includes("douyin.com") || host.includes("iesdouyin.com")) {
+      return { platform: "douyin", name: "抖音", embedUrl: null, pageUrl: raw };
+    }
+    // 快手
+    if (host.includes("kuaishou.com") || host.includes("gifshow.com")) {
+      return { platform: "kuaishou", name: "快手", embedUrl: null, pageUrl: raw };
+    }
+    // 小红书
+    if (host.includes("xiaohongshu.com") || host.includes("xhslink.com")) {
+      return { platform: "xiaohongshu", name: "小红书", embedUrl: null, pageUrl: raw };
+    }
+    return { platform: "unknown", name: "网页视频", embedUrl: null, pageUrl: raw };
+  } catch (_) {
+    return null;
+  }
+}
+
 function App() {
   const [sourceFile, setSourceFile] = useState(null);
   const [sourceUrl, setSourceUrl] = useState(null);
   const [targetFile, setTargetFile] = useState(null);
   const [targetUrl, setTargetUrl] = useState(null);
+
+  const [pageLinkInput, setPageLinkInput] = useState("");
+  const [linkImport, setLinkImport] = useState(null);
 
   const [analyzing, setAnalyzing] = useState(false);
   const [analysisError, setAnalysisError] = useState("");
@@ -420,6 +459,144 @@ function App() {
               生成一份可复用的「剪辑节奏模板」。再给它一条新素材，
               它会为你生成一整份相同风格的剪辑方案。
             </p>
+          </div>
+
+          <div style={{ marginBottom: 20 }}>
+            <div
+              style={{
+                fontSize: 12,
+                color: "rgba(186,194,226,0.95)",
+                marginBottom: 8,
+              }}
+            >
+              视频链接
+            </div>
+            <div
+              style={{
+                display: "flex",
+                gap: 10,
+                alignItems: "center",
+                flexWrap: "wrap",
+              }}
+            >
+              <input
+                type="text"
+                value={pageLinkInput}
+                onChange={(e) => {
+                  setPageLinkInput(e.target.value);
+                  setLinkImport(null);
+                }}
+                placeholder="粘贴 B站 / 抖音 / 快手 / 小红书 等视频网页链接"
+                style={{
+                  flex: "1 1 280px",
+                  minWidth: 0,
+                  padding: "10px 14px",
+                  borderRadius: 999,
+                  border: "1px solid rgba(148,163,255,0.28)",
+                  background: "rgba(15,23,42,0.85)",
+                  color: "#E5EDFF",
+                  fontSize: 13,
+                  outline: "none",
+                }}
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  const parsed = parseVideoPageLink(pageLinkInput);
+                  if (parsed) setLinkImport(parsed);
+                  else setAnalysisError("无法识别该链接，请粘贴完整的视频页面地址。");
+                }}
+                style={{
+                  padding: "10px 18px",
+                  borderRadius: 999,
+                  border: "none",
+                  background:
+                    "linear-gradient(135deg, #5B7FFF 0%, #7F2EFF 100%)",
+                  color: "#fff",
+                  fontSize: 13,
+                  fontWeight: 600,
+                  cursor: "pointer",
+                }}
+              >
+                解析并导入
+              </button>
+            </div>
+            <p
+              style={{
+                fontSize: 11,
+                color: "rgba(152,160,199,0.9)",
+                marginTop: 6,
+              }}
+            >
+              支持公开视频链接，仅做解析与预览，不会修改你的视频。
+            </p>
+            {linkImport && (
+              <div
+                style={{
+                  marginTop: 12,
+                  padding: 12,
+                  borderRadius: 12,
+                  background: "rgba(15,20,35,0.95)",
+                  border: "1px solid rgba(255,255,255,0.06)",
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: 12,
+                    color: "rgba(200,208,245,0.98)",
+                    marginBottom: 8,
+                  }}
+                >
+                  已识别为「{linkImport.name}」链接
+                </div>
+                {linkImport.embedUrl ? (
+                  <>
+                    <div
+                      style={{
+                        position: "relative",
+                        width: "100%",
+                        maxWidth: 560,
+                        borderRadius: 10,
+                        overflow: "hidden",
+                        background: "#000",
+                        aspectRatio: "16/9",
+                      }}
+                    >
+                      <iframe
+                        src={linkImport.embedUrl}
+                        title="视频预览"
+                        style={{
+                          position: "absolute",
+                          top: 0,
+                          left: 0,
+                          width: "100%",
+                          height: "100%",
+                          border: "none",
+                        }}
+                        allowFullScreen
+                      />
+                    </div>
+                    <p
+                      style={{
+                        fontSize: 11,
+                        color: "rgba(152,160,199,0.9)",
+                        marginTop: 8,
+                      }}
+                    >
+                      可在上方预览。要进行剪辑节奏分析，请下载该视频后使用下方「选择示例视频」上传，或直接选择本地文件。
+                    </p>
+                  </>
+                ) : linkImport.needRedirect ? (
+                  <p style={{ fontSize: 11, color: "rgba(175,182,215,0.95)" }}>
+                    短链接已保存。请打开该链接，在浏览器地址栏复制含 BV 号的完整视频页地址，再粘贴到上方输入框重新解析。
+                  </p>
+                ) : (
+                  <p style={{ fontSize: 11, color: "rgba(175,182,215,0.95)" }}>
+                    已保存链接。该平台暂不支持页面内预览。要进行剪辑分析，请先在对应 App 内下载视频，再使用下方「选择示例视频」上传本地文件。
+                  </p>
+                )}
+              </div>
+            )}
           </div>
 
           <div
