@@ -1,7 +1,7 @@
 const { useState, useEffect, useRef } = React;
 
 // ==========================================
-// 1. AI 聊天窗口组件 (ChatWidget)
+// 1. AI 聊天窗口组件 (ChatWidget) - 升级版
 // ==========================================
 function ChatWidget({ videoContext }) {
   const [isOpen, setIsOpen] = useState(false);
@@ -36,7 +36,7 @@ function ChatWidget({ videoContext }) {
     }
   };
 
-  // 悬浮球样式
+  // 悬浮球样式 (改大了，加了发光特效)
   if (!isOpen) return (
     <button 
       onClick={() => setIsOpen(true)}
@@ -44,27 +44,32 @@ function ChatWidget({ videoContext }) {
         position: 'fixed', bottom: 30, right: 30, width: 64, height: 64,
         borderRadius: '50%', background: 'linear-gradient(135deg, #FF4D1C, #FF8A3C)',
         color: '#fff', border: 'none', fontSize: 28, cursor: 'pointer',
-        boxShadow: '0 8px 20px rgba(255, 77, 28, 0.4)', zIndex: 9999,
+        boxShadow: '0 0 20px rgba(255, 77, 28, 0.6)', zIndex: 9999,
         transition: 'transform 0.2s', display: 'flex', alignItems: 'center', justifyContent: 'center'
       }}
+      onMouseOver={e => e.currentTarget.style.transform = 'scale(1.1)'}
+      onMouseOut={e => e.currentTarget.style.transform = 'scale(1)'}
     >
-      💬
+      🤖
     </button>
   );
 
-  // 展开窗口样式
+  // 展开窗口样式 (黑金风格)
   return (
     <div style={{
       position: 'fixed', bottom: 30, right: 30, width: 380, height: 600,
-      background: '#161821', borderRadius: 20, border: '1px solid rgba(255,255,255,0.1)',
+      background: '#161821', borderRadius: 20, border: '1px solid rgba(255,77,28,0.3)',
       zIndex: 9999, display: 'flex', flexDirection: 'column',
       boxShadow: '0 20px 50px rgba(0,0,0,0.8)', overflow: 'hidden'
     }}>
       {/* 标题栏 */}
-      <div style={{ padding: '20px', background: '#1F2330', borderBottom: '1px solid rgba(255,255,255,0.05)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <div style={{ padding: '20px', background: 'linear-gradient(90deg, #1F2330, #161821)', borderBottom: '1px solid rgba(255,255,255,0.05)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
           <div style={{ color: '#fff', fontWeight: 'bold', fontSize: 16 }}>AI 剪辑顾问</div>
-          <div style={{ color: '#4CE3A0', fontSize: 12 }}>DeepSeek V3 在线</div>
+          <div style={{ color: '#4CE3A0', fontSize: 12, display: 'flex', alignItems: 'center', gap: 4 }}>
+            <span style={{width: 6, height: 6, borderRadius: '50%', background: '#4CE3A0', boxShadow: '0 0 5px #4CE3A0'}}></span>
+            DeepSeek V3 在线
+          </div>
         </div>
         <button onClick={() => setIsOpen(false)} style={{ background: 'none', border: 'none', color: '#888', fontSize: 24, cursor: 'pointer' }}>×</button>
       </div>
@@ -75,7 +80,7 @@ function ChatWidget({ videoContext }) {
           <div key={i} style={{
             alignSelf: m.role === 'user' ? 'flex-end' : 'flex-start',
             maxWidth: '85%',
-            background: m.role === 'user' ? '#FF4D1C' : '#2A2F3E',
+            background: m.role === 'user' ? 'linear-gradient(135deg, #FF4D1C, #FF7B2F)' : '#2A2F3E',
             color: '#fff',
             padding: '12px 16px',
             borderRadius: m.role === 'user' ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
@@ -105,11 +110,10 @@ function ChatWidget({ videoContext }) {
 }
 
 // ==========================================
-// 2. 核心算法 + AI 深度推理
+// 2. 核心算法 + AI 深度推理 (主程序)
 // ==========================================
 function App() {
   const [sourceFile, setSourceFile] = useState(null);
-  const [videoUrl, setVideoUrl] = useState(null);
   
   // 状态管理
   const [analyzing, setAnalyzing] = useState(false);
@@ -126,12 +130,12 @@ function App() {
     setBasicResult(null);
     setDeepResult(null);
 
-    // 模拟读取视频硬数据 (真实环境用 Canvas，这里为了演示稳定用模拟数据+真实文件信息)
+    // 模拟读取视频硬数据 (为了演示效果，这里模拟了数据提取过程)
     setTimeout(() => {
       setProgress(50);
       const mockCuts = [];
-      const duration = 15.5; // 假设读取到的时长
-      for(let i=0; i<duration; i+=2.5) mockCuts.push(i); // 模拟每2.5秒一个镜头
+      const duration = 15.5; 
+      for(let i=0; i<duration; i+=2.5) mockCuts.push(i); 
       
       const result = {
         filename: sourceFile.name,
@@ -155,7 +159,7 @@ function App() {
   const runDeepAIAnalysis = async (baseData) => {
     setAiThinking(true);
     
-    // 我们构建一个超级详细的 Prompt，把基础数据发给 AI，让它推理
+    // 构建超级详细的 Prompt
     const prompt = `
       作为一个好莱坞专业剪辑师，请根据以下视频基础数据，生成一份专业的【剪辑分析报告】。
       
@@ -168,15 +172,15 @@ function App() {
       请你发挥专业知识，"推测"这个视频可能使用了哪些技术，并输出以下 JSON 格式：
       {
         "style": "一句话描述风格 (如：赛博朋克快剪 / 唯美慢节奏)",
-        "tools": ["列出3个可能用到的软件/插件，如 Premiere, AE, Davinci"],
+        "tools": ["列出3个可能用到的软件/插件"],
         "timeline": [
-          {"time": "00:00 - 00:03", "tech": "J-Cut (音频先入)", "reason": "建立悬念，平滑入场"},
-          {"time": "00:03 - 00:08", "tech": "Speed Ramp (变速)", "reason": "强调动作打击感"},
-          {"time": "00:08 - 结尾", "tech": "Match Cut (匹配剪辑)", "reason": "视觉流畅过渡"}
+          {"time": "00:00 - 00:03", "tech": "J-Cut", "reason": "建立悬念"},
+          {"time": "00:03 - 00:08", "tech": "Speed Ramp", "reason": "强调动作"},
+          {"time": "00:08 - 结尾", "tech": "Match Cut", "reason": "视觉过渡"}
         ],
         "advice": "给出一句专业的修改建议"
       }
-      注意：直接返回 JSON，不要废话。
+      注意：直接返回 JSON。
     `;
 
     try {
@@ -187,7 +191,7 @@ function App() {
       });
       const data = await res.json();
       
-      // 尝试解析 AI 返回的 JSON (如果 AI 返回了纯文本，这里做个容错)
+      // 解析 AI 返回的 JSON
       let parsed;
       try {
         const jsonStr = data.answer.match(/\{[\s\S]*\}/)[0];
@@ -245,7 +249,6 @@ function App() {
               <input type="file" accept="video/*" onChange={e => {
                 if(e.target.files[0]) {
                   setSourceFile(e.target.files[0]);
-                  setVideoUrl(URL.createObjectURL(e.target.files[0]));
                   setBasicResult(null); // 重置
                   setDeepResult(null);
                 }
@@ -345,10 +348,6 @@ function App() {
                   <div style={{ fontSize: 12, color: '#4CE3A0', marginBottom: 4 }}>AI 优化建议</div>
                   <div style={{ fontSize: 14, color: '#fff' }}>{deepResult.advice}</div>
                 </div>
-                
-                <button style={{ marginTop: 20, background: 'none', border: '1px solid #444', color: '#888', padding: '10px 20px', borderRadius: 20, cursor: 'pointer', fontSize: 12 }}>
-                  下载详细 PDF 报告 (Pro)
-                </button>
               </div>
             )}
           </div>
@@ -378,6 +377,6 @@ function DataBox({ label, value, color = "#fff" }) {
   );
 }
 
-// 渲染入口
+// 渲染入口 (这是修复报错的关键)
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(<App />);
