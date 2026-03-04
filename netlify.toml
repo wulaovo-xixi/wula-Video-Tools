@@ -1,0 +1,8 @@
+[build]
+  publish = "."
+
+# 魔法：把前端的 /api/chat 请求转发到 netlify/functions/chat
+[[redirects]]
+  from = "/api/*"
+  to = "/.netlify/functions/:splat"
+  status = 200
