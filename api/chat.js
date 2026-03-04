@@ -1,56 +1,64 @@
-// api/chat.js
 import OpenAI from 'openai';
 
-export default async function handler(req, res) {
-  // 1. 设置跨域，允许你的网页访问
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+// 处理 Vercel Edge Runtime (可选，为了更好兼容性)
+export const config = {
+  runtime: 'edge',
+};
 
-  // 处理预检请求
+export default async function handler(req) {
+  // 1. 允许跨域
   if (req.method === 'OPTIONS') {
-    res.status(200).end();
-    return;
+    return new Response(null, {
+      status: 200,
+      headers: {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'POST, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type',
+      },
+    });
   }
 
-  const { question, videoContext } = req.body;
-
-  // 2. 初始化 DeepSeek 客户端
-  // 注意：这里会自动读取你在 Vercel 里设置的 DEEPSEEK_API_KEY
-  const openai = new OpenAI({
-    baseURL: 'https://api.deepseek.com', // DeepSeek 的官方地址
-    apiKey: process.env.DEEPSEEK_API_KEY 
-  });
-
   try {
-    // 3. 构建系统提示词 (让 DeepSeek 扮演剪辑大师)
-    const systemPrompt = `
-      你是一位拥有 20 年经验的好莱坞专业视频剪辑师和后期特效专家。
-      用户正在分析一个视频，以下是该视频的一些上下文信息：
-      ${videoContext ? JSON.stringify(videoContext) : '暂无具体视频信息'}
+    const { question, videoContext } = await req.json();
 
-      请回答用户关于视频剪辑、特效制作、软件操作（如 Premiere Pro, After Effects, DaVinci Resolve）等方面的问题。
-      你的回答必须：
-      1. 专业且具体，使用准确的行业术语。
-      2. 如果涉及软件操作，请给出具体的步骤或快捷键。
-      3. 语气友好、自信。
+    // 2. 连接 DeepSeek
+    const client = new OpenAI({
+      baseURL: 'https://api.deepseek.com',
+      apiKey: process.env.DEEPSEEK_API_KEY 
+    });
+
+    const systemPrompt = `
+      你是一位专业剪辑师。用户正在分析视频，信息如下：
+      ${videoContext ? JSON.stringify(videoContext) : '无'}
+      请回答用户关于剪辑、PR/AE操作的问题。
     `;
 
-    // 4. 调用 DeepSeek V3 模型 (deepseek-chat)
-    const completion = await openai.chat.completions.create({
+    // 3. 发送请求
+    const completion = await client.chat.completions.create({
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: question }
       ],
-      model: "deepseek-chat", // DeepSeek V3 的模型名称
+      model: "deepseek-chat",
     });
 
     const answer = completion.choices[0].message.content;
 
-    res.status(200).json({ answer: answer });
+    return new Response(JSON.stringify({ answer }), {
+      status: 200,
+      headers: { 
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*' 
+      }
+    });
 
   } catch (error) {
-    console.error('DeepSeek Error:', error);
-    res.status(500).json({ error: 'AI 思考失败，请检查密钥是否正确。' });
+    return new Response(JSON.stringify({ error: 'AI 连接失败: ' + error.message }), {
+      status: 500,
+      headers: { 
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*' 
+      }
+    });
   }
 }
