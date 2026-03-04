@@ -1,12 +1,12 @@
 import OpenAI from 'openai';
 
-// 处理 Vercel Edge Runtime (可选，为了更好兼容性)
+// Vercel 边缘计算配置，速度更快
 export const config = {
   runtime: 'edge',
 };
 
 export default async function handler(req) {
-  // 1. 允许跨域
+  // 1. 处理浏览器的预检请求 (CORS)
   if (req.method === 'OPTIONS') {
     return new Response(null, {
       status: 200,
@@ -21,19 +21,20 @@ export default async function handler(req) {
   try {
     const { question, videoContext } = await req.json();
 
-    // 2. 连接 DeepSeek
+    // 2. 连接 DeepSeek (自动读取环境变量 DEEPSEEK_API_KEY)
     const client = new OpenAI({
       baseURL: 'https://api.deepseek.com',
       apiKey: process.env.DEEPSEEK_API_KEY 
     });
 
+    // 3. 设定 AI 角色
     const systemPrompt = `
-      你是一位专业剪辑师。用户正在分析视频，信息如下：
-      ${videoContext ? JSON.stringify(videoContext) : '无'}
-      请回答用户关于剪辑、PR/AE操作的问题。
+      你是一位专业视频剪辑师。
+      用户当前分析的视频信息：${videoContext ? JSON.stringify(videoContext) : '暂无'}
+      请简短、专业地回答用户关于剪辑技术的问题。
     `;
 
-    // 3. 发送请求
+    // 4. 发送请求
     const completion = await client.chat.completions.create({
       messages: [
         { role: "system", content: systemPrompt },

@@ -1,6 +1,7 @@
-import React, { useState, useEffect, useRef } from 'react';
+// --- 获取 React 全局对象 ---
+const { useState, useEffect, useRef } = React;
 
-// --- 聊天组件 (ChatWidget) ---
+// --- 1. 聊天组件 ---
 function ChatWidget({ videoContext }) {
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState([
@@ -28,7 +29,7 @@ function ChatWidget({ videoContext }) {
       const data = await res.json();
       setMessages(prev => [...prev, { role: 'assistant', content: data.answer || "API 没返回内容" }]);
     } catch (e) {
-      setMessages(prev => [...prev, { role: 'assistant', content: "发送失败，请检查网络或 Key。" }]);
+      setMessages(prev => [...prev, { role: 'assistant', content: "发送失败，请检查 Vercel 环境变量配置。" }]);
     } finally {
       setLoading(false);
     }
@@ -66,65 +67,66 @@ function ChatWidget({ videoContext }) {
   );
 }
 
-// --- 辅助函数 ---
-function parseVideoPageLink(url) {
-  try {
-    const u = new URL(url);
-    if (u.hostname.includes("bilibili")) return { platform: "bilibili", name: "哔哩哔哩" };
-    return { platform: "web", name: "网页视频" };
-  } catch(e) { return null; }
-}
-
-// --- 主程序 ---
+// --- 2. 主程序 ---
 function App() {
   const [sourceFile, setSourceFile] = useState(null);
   const [analysisResult, setAnalysisResult] = useState(null);
   const [analyzing, setAnalyzing] = useState(false);
 
-  // 模拟分析函数 (保留你原有的逻辑框架)
+  // 简单的文件分析模拟逻辑
   const handleAnalyze = () => {
-    if (!sourceFile) return alert("请先选择视频");
+    if (!sourceFile) return alert("请先选择视频文件");
     setAnalyzing(true);
-    // 模拟 2 秒后出结果
+    // 模拟 1.5秒后出结果
     setTimeout(() => {
       setAnalysisResult({ 
-        duration: 120, 
-        avgShotLength: 3.5, 
-        pace: "medium", 
-        shots: [{start:0, end:5}, {start:5, end:10}] 
+        filename: sourceFile.name,
+        duration: "02:30", 
+        style: "快节奏 Vlog",
+        details: "检测到大量快速剪辑和跳接。"
       });
       setAnalyzing(false);
-    }, 2000);
+    }, 1500);
   };
 
   return (
-    <div style={{ minHeight: "100vh", background: "#05060A", color: "#fff", display: "flex", justifyContent: "center", padding: 20 }}>
-      <div style={{ maxWidth: 800, width: "100%" }}>
-        <h1>CutLens AI 视频分析</h1>
-        
-        <div style={{ background: "#111", padding: 20, borderRadius: 10, marginBottom: 20 }}>
-          <h3>1. 上传视频</h3>
-          <input type="file" onChange={e => setSourceFile(e.target.files[0])} accept="video/*" />
-          <div style={{ marginTop: 10 }}>
-            <button onClick={handleAnalyze} style={{ padding: "10px 20px", background: "#FF4D1C", color: "#fff", border: "none", borderRadius: 5, cursor: "pointer" }}>
-              {analyzing ? "分析中..." : "开始分析"}
-            </button>
-          </div>
-        </div>
-
-        {analysisResult && (
-          <div style={{ background: "#161b22", padding: 20, borderRadius: 10 }}>
-            <h3>分析结果</h3>
-            <p>风格：{analysisResult.pace}</p>
-            <p>镜头数：{analysisResult.shots.length}</p>
-          </div>
-        )}
+    <div style={{ maxWidth: 1000, margin: "0 auto", padding: 20 }}>
+      {/* 标题区 */}
+      <div style={{ textAlign: "center", marginBottom: 40, marginTop: 40 }}>
+        <h1 style={{ fontSize: 48, background: "linear-gradient(90deg, #FFB341, #FF4D1C)", WebkitBackgroundClip: "text", color: "transparent", margin: "0 0 10px 0" }}>
+          AI 导演级剪辑分析
+        </h1>
+        <p style={{ color: "#889" }}>上传视频，一键拆解镜头节奏 (DeepSeek 驱动)</p>
       </div>
 
-      {/* ★ 聊天窗口在这里 ★ */}
+      {/* 操作区 */}
+      <div style={{ background: "#111", padding: 30, borderRadius: 16, border: "1px solid #222" }}>
+        <h3 style={{ marginTop: 0 }}>第一步：上传视频</h3>
+        <input type="file" onChange={e => setSourceFile(e.target.files[0])} accept="video/*" style={{ color: "#ccc" }} />
+        
+        <div style={{ marginTop: 20 }}>
+          <button onClick={handleAnalyze} disabled={analyzing} style={{ padding: "12px 24px", background: "#FF4D1C", color: "#fff", border: "none", borderRadius: 8, cursor: "pointer", fontSize: 16, fontWeight: "bold", opacity: analyzing ? 0.7 : 1 }}>
+            {analyzing ? "正在分析中..." : "开始分析剪辑手法"}
+          </button>
+        </div>
+      </div>
+
+      {/* 结果区 */}
+      {analysisResult && (
+        <div style={{ marginTop: 20, background: "#161b22", padding: 30, borderRadius: 16, border: "1px solid #333" }}>
+          <h3 style={{ marginTop: 0, color: "#4CE3A0" }}>分析完成 ✅</h3>
+          <p><strong>视频文件：</strong> {analysisResult.filename}</p>
+          <p><strong>剪辑风格：</strong> {analysisResult.style}</p>
+          <p><strong>详细诊断：</strong> {analysisResult.details}</p>
+        </div>
+      )}
+
+      {/* 聊天窗口组件 */}
       <ChatWidget videoContext={analysisResult} />
     </div>
   );
 }
 
-export default App;
+// --- 3. 启动应用 (这是最关键的一步) ---
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<App />);
