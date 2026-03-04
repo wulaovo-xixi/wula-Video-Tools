@@ -39,8 +39,7 @@ function parseVideoPageLink(url) {
 function App() {
   const [sourceFile, setSourceFile] = useState(null);
   const [sourceUrl, setSourceUrl] = useState(null);
-  const [targetFile, setTargetFile] = useState(null);
-  const [targetUrl, setTargetUrl] = useState(null);
+  const [targetFiles, setTargetFiles] = useState([]); // [{ id, file, url }]
 
   const [pageLinkInput, setPageLinkInput] = useState("");
   const [linkImport, setLinkImport] = useState(null);
@@ -50,17 +49,22 @@ function App() {
   const [downloadProgress, setDownloadProgress] = useState(null);
 
   const [analyzing, setAnalyzing] = useState(false);
+  const [analysisProgress, setAnalysisProgress] = useState(0);
   const [analysisError, setAnalysisError] = useState("");
   const [analysisResult, setAnalysisResult] = useState(null);
   const [templatePlan, setTemplatePlan] = useState(null);
-  const [applyResult, setApplyResult] = useState(null);
+  const [applyResults, setApplyResults] = useState([]); // [{ id, fileName, duration, cuts }]
+  const [applying, setApplying] = useState(false);
+  const [applyProgress, setApplyProgress] = useState(0);
 
   useEffect(() => {
     return () => {
       if (sourceUrl) URL.revokeObjectURL(sourceUrl);
-      if (targetUrl) URL.revokeObjectURL(targetUrl);
+      for (const t of targetFiles) {
+        if (t.url) URL.revokeObjectURL(t.url);
+      }
     };
-  }, [sourceUrl, targetUrl]);
+  }, [sourceUrl, targetFiles]);
 
   const handleSourceChange = (e) => {
     const file = e.target.files?.[0];
@@ -75,20 +79,29 @@ function App() {
     setAnalysisError("");
     setAnalysisResult(null);
     setTemplatePlan(null);
-    setApplyResult(null);
+    setApplyResults([]);
   };
 
   const handleTargetChange = (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    if (!file.type.startsWith("video/")) {
-      setAnalysisError("应用模板时也需要选择一个视频文件。");
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
+    const invalid = files.find((f) => !f.type.startsWith("video/"));
+    if (invalid) {
+      setAnalysisError("应用模板时也需要选择视频文件（请不要混入非视频）。");
       return;
     }
-    if (targetUrl) URL.revokeObjectURL(targetUrl);
-    setTargetFile(file);
-    setTargetUrl(URL.createObjectURL(file));
-    setApplyResult(null);
+    setAnalysisError("");
+    setApplyResults([]);
+    setTargetFiles((prev) => {
+      const next = [...prev];
+      for (const file of files) {
+        const id = `${Date.now()}_${Math.random().toString(16).slice(2)}`;
+        next.push({ id, file, url: URL.createObjectURL(file) });
+      }
+      return next;
+    });
+    // 允许重复选择同一文件：重置 input 值
+    e.target.value = "";
   };
 
   const clearSource = () => {
@@ -97,18 +110,29 @@ function App() {
     setSourceUrl(null);
     setAnalysisResult(null);
     setTemplatePlan(null);
-    setApplyResult(null);
+    setApplyResults([]);
     setAnalysisError("");
+    setAnalysisProgress(0);
   };
 
-  const clearTarget = () => {
-    if (targetUrl) URL.revokeObjectURL(targetUrl);
-    setTargetFile(null);
-    setTargetUrl(null);
-    setApplyResult(null);
+  const removeTarget = (id) => {
+    setTargetFiles((prev) => {
+      const item = prev.find((t) => t.id === id);
+      if (item?.url) URL.revokeObjectURL(item.url);
+      return prev.filter((t) => t.id !== id);
+    });
+    setApplyResults((prev) => prev.filter((r) => r.id !== id));
   };
 
-  async function analyzeVideoEditing(file) {
+  const clearAllTargets = () => {
+    for (const t of targetFiles) {
+      if (t.url) URL.revokeObjectURL(t.url);
+    }
+    setTargetFiles([]);
+    setApplyResults([]);
+  };
+
+  async function analyzeVideoEditing(file, onProgress) {
     return new Promise((resolve, reject) => {
       const video = document.createElement("video");
       video.preload = "auto";
@@ -143,6 +167,8 @@ function App() {
         canvas.height = targetHeight;
 
         const step = Math.max(0.4, duration / 120);
+        const totalSamples = Math.max(1, Math.ceil(duration / step));
+        let doneSamples = 0;
 
         let prevVector = null;
         const diffs = [];
@@ -182,6 +208,10 @@ function App() {
           for (let t = 0; t < duration; t += step) {
             // eslint-disable-next-line no-await-in-loop
             await captureAt(t);
+            doneSamples += 1;
+            if (typeof onProgress === "function") {
+              onProgress(Math.min(99, Math.round((doneSamples / totalSamples) * 100)));
+            }
           }
         } catch (err) {
           cleanup();
@@ -190,6 +220,7 @@ function App() {
         }
 
         cleanup();
+        if (typeof onProgress === "function") onProgress(100);
 
         if (!diffs.length) {
           resolve({
@@ -271,12 +302,13 @@ function App() {
       return;
     }
     setAnalyzing(true);
+    setAnalysisProgress(0);
     setAnalysisError("");
     setAnalysisResult(null);
     setTemplatePlan(null);
-    setApplyResult(null);
+    setApplyResults([]);
     try {
-      const result = await analyzeVideoEditing(sourceFile);
+      const result = await analyzeVideoEditing(sourceFile, (p) => setAnalysisProgress(p));
       setAnalysisResult(result);
 
       const template = {
@@ -311,48 +343,49 @@ function App() {
       setAnalysisError("请先分析一个示例视频，生成剪辑模板。");
       return;
     }
-    if (!targetFile) {
-      setAnalysisError("请选择一个要应用模板的新视频。");
+    if (!targetFiles.length) {
+      setAnalysisError("请先选择一个或多个要应用模板的新视频。");
       return;
     }
     setAnalysisError("");
-    setApplyResult(null);
+    setApplyResults([]);
+    setApplying(true);
+    setApplyProgress(0);
 
-    const video = document.createElement("video");
-    video.preload = "auto";
-    video.muted = true;
-    const objectUrl = URL.createObjectURL(targetFile);
-    video.src = objectUrl;
+    const results = [];
+    for (let i = 0; i < targetFiles.length; i++) {
+      const tf = targetFiles[i];
+      // eslint-disable-next-line no-await-in-loop
+      const r = await new Promise((resolve) => {
+        const video = document.createElement("video");
+        video.preload = "metadata";
+        video.muted = true;
+        const objectUrl = tf.url || URL.createObjectURL(tf.file);
+        video.src = objectUrl;
 
-    video.addEventListener("error", () => {
-      URL.revokeObjectURL(objectUrl);
-      setAnalysisError("无法读取目标视频，请尝试更换文件。");
-    });
+        const fail = (msg) => resolve({ id: tf.id, fileName: tf.file.name, error: msg || "无法读取视频" });
 
-    video.addEventListener("loadedmetadata", () => {
-      const duration = video.duration;
-      URL.revokeObjectURL(objectUrl);
-      if (!duration || !isFinite(duration)) {
-        setAnalysisError("无法获取目标视频时长。");
-        return;
-      }
-
-      const cutPlan = templatePlan.structure.map((s, idx) => {
-        const start = (s.startRatio / 100) * duration;
-        const end = (s.endRatio / 100) * duration;
-        return {
-          index: idx + 1,
-          start,
-          end,
-          length: end - start,
-        };
+        video.addEventListener("error", () => fail("无法读取目标视频，请尝试更换文件。"));
+        video.addEventListener("loadedmetadata", () => {
+          const duration = video.duration;
+          if (!duration || !isFinite(duration)) {
+            fail("无法获取目标视频时长。");
+            return;
+          }
+          const cuts = templatePlan.structure.map((s, idx) => {
+            const start = (s.startRatio / 100) * duration;
+            const end = (s.endRatio / 100) * duration;
+            return { index: idx + 1, start, end, length: end - start };
+          });
+          resolve({ id: tf.id, fileName: tf.file.name, duration, cuts });
+        });
       });
+      results.push(r);
+      setApplyProgress(Math.round(((i + 1) / targetFiles.length) * 100));
+    }
 
-      setApplyResult({
-        duration,
-        cuts: cutPlan,
-      });
-    });
+    setApplyResults(results);
+    setApplying(false);
   };
 
   const formatTime = (seconds) => {
@@ -837,7 +870,18 @@ function App() {
             <div style={{ marginBottom: 16 }}>
               <div style={{ fontSize: 11, color: "rgba(186,194,226,0.9)", marginBottom: 4 }}>分析进度</div>
               <div style={{ height: 6, borderRadius: 999, background: "rgba(255,255,255,0.08)", overflow: "hidden" }}>
-                <div style={{ height: "100%", width: "45%", background: "linear-gradient(90deg, #FF8A3C, #FF4D1C)", borderRadius: 999, animation: "cutlens-progress 1.2s ease-in-out infinite" }} />
+                <div
+                  style={{
+                    height: "100%",
+                    width: `${analysisProgress || 0}%`,
+                    background: "linear-gradient(90deg, #FF8A3C, #FF4D1C)",
+                    borderRadius: 999,
+                    transition: "width 0.15s ease",
+                  }}
+                />
+              </div>
+              <div style={{ fontSize: 11, color: "rgba(152,160,199,0.9)", marginTop: 4 }}>
+                {analysisProgress}%
               </div>
             </div>
           )}
@@ -1462,6 +1506,7 @@ function App() {
                 <input
                   type="file"
                   accept="video/*"
+                  multiple
                   onChange={handleTargetChange}
                   style={{
                     position: "absolute",
@@ -1472,37 +1517,68 @@ function App() {
                 />
               </label>
             </div>
-            {targetFile && (
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  gap: 8,
-                  fontSize: 11,
-                  color: "rgba(163,170,205,0.94)",
-                }}
-              >
-                <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  已选择：{targetFile.name}
-                </span>
-                <button
-                  type="button"
-                  onClick={clearTarget}
-                  title="清除选择，重新选择目标视频"
-                  style={{
-                    flexShrink: 0,
-                    padding: "4px 8px",
-                    borderRadius: 6,
-                    border: "1px solid rgba(255,255,255,0.2)",
-                    background: "rgba(255,80,80,0.2)",
-                    color: "rgba(255,180,180,0.98)",
-                    fontSize: 11,
-                    cursor: "pointer",
-                  }}
-                >
-                  清除选择
-                </button>
+            {targetFiles.length > 0 && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+                  <div style={{ fontSize: 11, color: "rgba(163,170,205,0.94)" }}>
+                    已导入 {targetFiles.length} 个目标视频（可多选）
+                  </div>
+                  <button
+                    type="button"
+                    onClick={clearAllTargets}
+                    style={{
+                      padding: "4px 8px",
+                      borderRadius: 8,
+                      border: "1px solid rgba(255,255,255,0.2)",
+                      background: "rgba(255,80,80,0.22)",
+                      color: "rgba(255,180,180,0.98)",
+                      fontSize: 11,
+                      cursor: "pointer",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    清空全部
+                  </button>
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 120, overflow: "auto" }}>
+                  {targetFiles.map((t) => (
+                    <div
+                      key={t.id}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        gap: 10,
+                        padding: "6px 8px",
+                        borderRadius: 10,
+                        background: "rgba(14,18,30,0.98)",
+                        border: "1px solid rgba(255,255,255,0.04)",
+                      }}
+                    >
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontSize: 11, color: "rgba(215,222,255,0.98)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                          {t.file.name}
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => removeTarget(t.id)}
+                        style={{
+                          flexShrink: 0,
+                          padding: "4px 8px",
+                          borderRadius: 8,
+                          border: "1px solid rgba(255,255,255,0.2)",
+                          background: "rgba(255,80,80,0.22)",
+                          color: "rgba(255,180,180,0.98)",
+                          fontSize: 11,
+                          cursor: "pointer",
+                        }}
+                      >
+                        删除
+                      </button>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
             <div
@@ -1525,6 +1601,7 @@ function App() {
               </div>
               <button
                 onClick={handleApplyTemplate}
+                disabled={applying}
                 style={{
                   padding: "7px 11px",
                   borderRadius: 999,
@@ -1534,16 +1611,35 @@ function App() {
                   color: "#05070C",
                   fontSize: 11,
                   fontWeight: 600,
-                  cursor: "pointer",
+                  cursor: applying ? "default" : "pointer",
                   whiteSpace: "nowrap",
                 }}
               >
-                生成剪辑方案
+                {applying ? "生成中…" : "生成剪辑方案"}
               </button>
             </div>
           </div>
 
-          {applyResult && (
+          {applying && (
+            <div
+              style={{
+                padding: "11px 12px",
+                borderRadius: 14,
+                background:
+                  "linear-gradient(135deg, rgba(8,11,18,0.98), rgba(10,14,24,0.98))",
+                border: "1px solid rgba(255,255,255,0.06)",
+              }}
+            >
+              <div style={{ fontSize: 12, color: "rgba(215,222,255,0.98)", marginBottom: 6 }}>
+                生成进度：{applyProgress}%
+              </div>
+              <div style={{ height: 6, borderRadius: 999, background: "rgba(255,255,255,0.08)", overflow: "hidden" }}>
+                <div style={{ height: "100%", width: `${applyProgress}%`, background: "linear-gradient(90deg, #4CE3A0, #26C6DA)", borderRadius: 999, transition: "width 0.15s ease" }} />
+              </div>
+            </div>
+          )}
+
+          {applyResults.length > 0 && (
             <div
               style={{
                 padding: "11px 12px",
@@ -1567,52 +1663,44 @@ function App() {
                   color: "rgba(215,222,255,0.98)",
                 }}
               >
-                剪辑方案（建议时间码）
+                剪辑方案（多目标视频）
               </div>
-              <div
-                style={{
-                  color: "rgba(160,168,208,0.96)",
-                }}
-              >
-                目标视频时长约 {applyResult.duration.toFixed(1)}s。
-                根据示例视频的节奏，我们推荐以下剪辑片段：
-              </div>
-              <ul
-                style={{
-                  listStyle: "none",
-                  padding: 0,
-                  margin: 0,
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: 4,
-                }}
-              >
-                {applyResult.cuts.map((c) => (
-                  <li
-                    key={c.index}
-                    style={{
-                      padding: "5px 7px",
-                      borderRadius: 8,
-                      background: "rgba(14,18,30,0.98)",
-                      border: "1px solid rgba(255,255,255,0.04)",
-                    }}
-                  >
-                    <span
-                      style={{
-                        fontWeight: 600,
-                        color: "rgba(228,234,255,0.96)",
-                        marginRight: 6,
-                      }}
-                    >
-                      段落 {c.index}
-                    </span>
-                    <span>
-                      {formatTime(c.start)} → {formatTime(c.end)} ·{" "}
-                      {c.length.toFixed(2)}s
-                    </span>
-                  </li>
-                ))}
-              </ul>
+              {applyResults.map((r) => (
+                <div key={r.id} style={{ padding: "6px 0", borderTop: "1px solid rgba(255,255,255,0.06)" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" }}>
+                    <div style={{ fontSize: 11, color: "rgba(228,234,255,0.96)", fontWeight: 600, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {r.fileName}
+                    </div>
+                    {r.error ? (
+                      <span style={{ fontSize: 11, color: "rgba(255,180,180,0.98)" }}>{r.error}</span>
+                    ) : (
+                      <span style={{ fontSize: 11, color: "rgba(160,168,208,0.96)" }}>{r.duration.toFixed(1)}s</span>
+                    )}
+                  </div>
+                  {!r.error && (
+                    <ul style={{ listStyle: "none", padding: 0, margin: "6px 0 0", display: "flex", flexDirection: "column", gap: 4 }}>
+                      {r.cuts.map((c) => (
+                        <li
+                          key={c.index}
+                          style={{
+                            padding: "5px 7px",
+                            borderRadius: 8,
+                            background: "rgba(14,18,30,0.98)",
+                            border: "1px solid rgba(255,255,255,0.04)",
+                          }}
+                        >
+                          <span style={{ fontWeight: 600, color: "rgba(228,234,255,0.96)", marginRight: 6 }}>
+                            段落 {c.index}
+                          </span>
+                          <span>
+                            {formatTime(c.start)} → {formatTime(c.end)} · {c.length.toFixed(2)}s
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              ))}
               <div
                 style={{
                   marginTop: 4,
